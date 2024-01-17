@@ -1,0 +1,275 @@
+/*
+  Rui Santos
+  Complete project details at https://RandomNerdTutorials.com/esp-now-esp32-arduino-ide/
+  
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files.
+  
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
+*/
+
+#include <esp_now.h>
+#include <WiFi.h>
+#include <Wire.h>
+
+String pippo;
+const int p1 = 32;
+const int p2 = 35;
+const int p3 = 34;
+const int p4 = 39;
+const int p5 = 36;
+// variable for storing the potentiometer value
+int potValue = 0;
+int potValue1 = 0;
+int potValue2 = 0;
+int potValue3 = 0;
+int potValue4 = 0;
+
+const int MPU1=0x68;
+const int MPU2=0x69;
+int16_t axis_X,axis_Y,axis_Z;
+int16_t axis_2X,axis_2Y,axis_2Z;
+int minVal=265;
+int maxVal=402;
+double x;
+double yy;
+double z;
+double x2;
+double yy2;
+double z2;
+int flexion,twist;
+int n2x,nx,y,xx,zz;
+int n2y, ny,y2;
+int nz,n2z;
+
+// REPLACE WITH YOUR RECEIVER MAC Address
+uint8_t broadcastAddress[] = {0x58, 0xBF, 0x25, 0xA1, 0x25, 0x48};
+
+// Structure example to send data
+// Must match the receiver structure
+typedef struct struct_message {
+  char a[95];
+  int id;
+  
+} struct_message;
+
+// Create a struct_message called myData
+struct_message myData;
+
+esp_now_peer_info_t peerInfo;
+
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+}
+ 
+void setup() {
+  // Init Serial Monitor
+  Serial.begin(115200); 
+  // Set device as a Wi-Fi Station
+  WiFi.mode(WIFI_STA);
+
+  Wire.begin();
+  Wire.beginTransmission(MPU1);
+  Wire.write(0x6B);
+  Wire.write(0b00000000);
+  Wire.endTransmission();  
+  Wire.beginTransmission(MPU1);
+  Wire.write(0x1B);
+  Wire.write(0x00000000);
+  Wire.endTransmission();
+  Wire.beginTransmission(MPU1);
+  Wire.write(0x1C);
+  Wire.write(0b00000000);
+  Wire.endTransmission();
+ 
+  Wire.begin();
+  Wire.beginTransmission(MPU2);
+  Wire.write(0x6B);
+  Wire.write(0b00000000);
+  Wire.endTransmission();  
+  Wire.beginTransmission(MPU2);
+  Wire.write(0x1B);
+  Wire.write(0x00000000);
+  Wire.endTransmission();
+  Wire.beginTransmission(MPU2);
+  Wire.write(0x1C);
+  Wire.write(0b00000000);
+  Wire.endTransmission();   
+
+if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+  esp_now_register_send_cb(OnDataSent);
+ memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;  
+  peerInfo.encrypt = false;
+
+  if (esp_now_add_peer(&peerInfo) != ESP_OK){
+    Serial.println("Failed to add peer");
+    return;
+  }
+  
+  Serial.println("");
+  delay(10);
+}
+
+void loop() {
+      
+      GetMpuValue1(MPU1);
+      //get values for second mpu having address of 0x69
+      GetMpuValue2(MPU2);
+      anglecalc();
+
+potValue = analogRead(p1);
+potValue1 = analogRead(p2);
+potValue2 = analogRead(p3);
+potValue3 = analogRead(p4);
+potValue4 = analogRead(p5);
+
+//thumb      
+float angle0 = map(potValue, 1850, 1280,0, 90.0);
+
+float angle1 = map(potValue1, 1520, 1050, 0, 90.0);
+
+float angle2 = map(potValue2, 1740, 1310, 0, 90.0);
+
+float angle3 = map(potValue3, 1650, 1090, 0, 90.0);
+
+//pinky
+float angle4 = map(potValue4, 2130, 4095, 0, 90.0);
+
+
+  /* Print out the values */
+
+ myData.id =2;
+pippo = String(angle0)+","+String(angle1)+","+String(angle2)+","+String(angle3)+","+String(angle4)+","+String(nx)+","+String(ny)+","+String(nz)+","+String(n2x)+","+String(n2y)+","+String(n2z);
+ pippo.toCharArray(myData.a, 85);  
+  Serial.println(myData.a);
+  Serial.println(myData.id);
+
+  // Send message via ESP-NOW
+  esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
+   
+  if (result == ESP_OK) {
+    Serial.println("Sent with success");
+  }
+  else {
+    Serial.println("Error sending the data");
+  }
+ 
+
+delay(5);
+
+}
+
+void GetMpuValue1(const int MPU){
+  Wire.beginTransmission(MPU);
+  Wire.write(0x3B);
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU,14,true);
+  axis_X=Wire.read()<<8|Wire.read();
+  axis_Y=Wire.read()<<8|Wire.read();
+  axis_Z=Wire.read()<<8|Wire.read();
+    int xAng = map(axis_X,minVal,maxVal,-90,90);
+    int yAng = map(axis_Y,minVal,maxVal,-90,90);
+    int zAng = map(axis_Z,minVal,maxVal,-90,90);
+       x= RAD_TO_DEG * (atan2(-yAng, -zAng)+PI);
+       yy= RAD_TO_DEG * (atan2(-xAng, -zAng)+PI);
+       z= RAD_TO_DEG * (atan2(-yAng, -xAng)+PI);
+   
+}
+void GetMpuValue2(const int MPU){
+  Wire.beginTransmission(MPU);
+  Wire.write(0x3B); // starting with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU,14,true);
+  axis_2X=Wire.read()<<8|Wire.read();
+  axis_2Y=Wire.read()<<8|Wire.read();
+  axis_2Z=Wire.read()<<8|Wire.read();
+    int x2Ang = map(axis_2X,minVal,maxVal,-90,90);
+    int y2Ang = map(axis_2Y,minVal,maxVal,-90,90);
+    int z2Ang = map(axis_2Z,minVal,maxVal,-90,90);
+       x2= RAD_TO_DEG * (atan2(-y2Ang, -z2Ang)+PI);
+       yy2= RAD_TO_DEG * (atan2(-x2Ang, -z2Ang)+PI);
+       z2= RAD_TO_DEG * (atan2(-y2Ang, -x2Ang)+PI);
+
+}
+
+//MPU callibration
+
+void anglecalc()
+{
+if (x<=180)
+  {
+    nx=x;
+   
+  }
+  else if(x>180)
+  {
+     nx=map(x,181,360,-180,-1);
+   
+  }
+ 
+    if (x2<=180)
+  {
+    n2x=x2;
+   
+  }
+  else if(x2>180)
+  {
+     n2x=map(x2,181,360,-180,-1);
+   
+  }
+
+
+     {
+if (yy<=180)
+  {
+    ny=yy;
+   
+  }
+  else if(yy>180)
+  {
+     ny=map(yy,181,360,-180,-1);
+   
+  }
+ 
+    if (yy2<=180)
+  {
+    n2y=yy2;
+   
+  }
+  else if(yy2>180)
+  {
+     n2y=map(yy2,181,360,-180,-1);
+   
+  }  
+  
+  {
+if (z<=180)
+  {
+    nz=z;
+   
+  }
+  else if(z>180)
+  {
+     nz=map(x,181,360,-180,-1);
+   
+  }
+ 
+    if (z2<=180)
+  {
+    n2z=z2;
+   
+  }
+  else if(z2>180)
+  {
+     n2z=map(x2,181,360,-180,-1);
+   
+  }
+
+  }}}
